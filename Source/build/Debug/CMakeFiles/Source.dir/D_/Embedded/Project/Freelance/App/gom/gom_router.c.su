@@ -1,0 +1,11 @@
+D:/Embedded/Project/Freelance/App/gom/gom_router.c:31:13:upper_copy	32	static
+D:/Embedded/Project/Freelance/App/gom/gom_router.c:32:13:is_token	16	static
+D:/Embedded/Project/Freelance/App/gom/gom_router.c:33:13:token_one_of	32	static
+D:/Embedded/Project/Freelance/App/gom/gom_router.c:34:13:valid_token	16	static
+D:/Embedded/Project/Freelance/App/gom/gom_router.c:42:13:match_header	32	static
+D:/Embedded/Project/Freelance/App/gom/gom_router.c:43:30:find_command	24	static
+D:/Embedded/Project/Freelance/App/gom/gom_router.c:44:17:capabilities	16	static
+D:/Embedded/Project/Freelance/App/gom/gom_router.c:46:6:gom_router_init	16	static
+D:/Embedded/Project/Freelance/App/gom/gom_router.c:47:6:gom_router_set_device	24	static
+D:/Embedded/Project/Freelance/App/gom/gom_router.c:49:21:gom_router_execute	544	static
+D:/Embedded/Project/Freelance/App/gom/gom_router.c:85:13:gom_router_status_text	16	static

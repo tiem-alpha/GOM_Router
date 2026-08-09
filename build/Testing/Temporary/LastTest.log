@@ -1,0 +1,18 @@
+Start testing: Aug 05 14:31 SEAST
+----------------------------------------------------------
+1/1 Testing: gom850_host
+1/1 Test: gom850_host
+Command: "/cygdrive/d/Embedded/Project/Freelance/build/D:/Embedded/Project/Freelance/build/Debug/gom850_host.exe"
+Directory: /cygdrive/d/Embedded/Project/Freelance/build
+"gom850_host" start time: Aug 05 14:31 SEAST
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Failed.
+"gom850_host" end time: Aug 05 14:31 SEAST
+"gom850_host" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Aug 05 14:31 SEAST

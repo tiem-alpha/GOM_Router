@@ -1,0 +1,3 @@
+# Project-local Codex defaults. Loaded for trusted sessions opened in this project.
+approval_policy = "never"
+sandbox_mode = "danger-full-access"

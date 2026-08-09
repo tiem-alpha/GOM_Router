@@ -1,0 +1,8 @@
+D:/Embedded/Project/Freelance/App/gom/gom_firmware.c:24:13:pc_write	16	static
+D:/Embedded/Project/Freelance/App/gom/gom_firmware.c:30:13:pc_error	112	static
+D:/Embedded/Project/Freelance/App/gom/gom_firmware.c:39:13:gom_read_line	40	static
+D:/Embedded/Project/Freelance/App/gom/gom_firmware.c:55:13:update_identity	24	static
+D:/Embedded/Project/Freelance/App/gom/gom_firmware.c:64:13:is_router_local	16	static
+D:/Embedded/Project/Freelance/App/gom/gom_firmware.c:74:13:execute_line	320	static
+D:/Embedded/Project/Freelance/App/gom/gom_firmware.c:110:6:gom_firmware_init	40	static
+D:/Embedded/Project/Freelance/App/gom/gom_firmware.c:117:6:gom_firmware_task	416	static
