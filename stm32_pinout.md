@@ -1,6 +1,9 @@
 UART1 
     TX: PA9
     RX: PA10
+UART6
+    TX: PC6
+    RX: PC7
 UART2: 
     TX PA2
     RX PA3

@@ -28,7 +28,8 @@ until their exact model/firmware behaviour has been verified on hardware.
 
 The STM32F411 integration is now in `App/gom/gom_firmware.c`:
 
-- USART1 (PA9/PA10) is `UART_PC`; USART2 (PA2/PA3) is the shared `UART_GOM`.
+- USART6 (PC6/PC7) is `UART_PC`; USART2 (PA2/PA3) is the shared `UART_GOM`.
+  USART1 (PA9/PA10) is reserved for the debug CLI and STM32 UART bootloader.
 - K1..K8 use PB3, PB4, PB5, PB6, PB7, PB8, PB12 and PB13 respectively.
 - Send `ROUT:CHAN <1..8>`, then `SYST:DEV:IDN?` to identify that GOM before
   using model-specific commands. `ROUT:OPEN:ALL` opens every relay.

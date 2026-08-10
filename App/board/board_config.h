@@ -3,18 +3,21 @@
 /*
  * Board-only configuration.
  *
- * USART1 is the PC-facing RS-232 interface (PA9/PA10).  USART2 is the
- * switched GOM bus (PA2/PA3).  Keep this mapping here: application code must
- * never depend on GPIO names or CubeMX-generated handles directly.
+ * USART6 is the PC-facing RS-232 interface (PC6/PC7). USART2 is the switched
+ * GOM bus (PA2/PA3). USART1 (PA9/PA10) is reserved for the debug CLI and the
+ * STM32 ROM bootloader. Keep this mapping here: application code must never
+ * depend on GPIO names or CubeMX-generated handles directly.
  */
 #include "main.h"
 
 /* CubeMX owns the definitions in main.c; application modules only borrow them. */
 extern UART_HandleTypeDef huart1;
 extern UART_HandleTypeDef huart2;
+extern UART_HandleTypeDef huart6;
 
-#define BOARD_UART_PC             (&huart1)
+#define BOARD_UART_PC             (&huart6)
 #define BOARD_UART_GOM            (&huart2)
+#define BOARD_UART_DEBUG          (&huart1)
 
 /* K1..K8 coil outputs.  A relay is selected only by board_relay_set_one(). */
 #define BOARD_RELAY_PORT          GPIOB

@@ -16,7 +16,7 @@
                          |
                    U1 MAX3232
                          |
-                       USART1
+                       USART6
                          |
                   +----------------+
                   |  U3 STM32F411  |---- SWD / NRST / BOOT0
@@ -31,6 +31,8 @@
         J3 ... J10: GOM RS-232 (mỗi cổng một nhánh)
 
     Feedback K1...K8 + fault latch ---- GPIO STM32
+
+    USART1 PA9/PA10 ------------------- Debug CLI / UART bootloader
 ```
 
 `USART2` chỉ nối với common bus của tám relay. Mỗi relay K1…K8 chuyển đồng thời hai đường dữ liệu: **GOM TXD → MAX3232 RX** và **MAX3232 TX → GOM RXD**. Không được nối song song TXD của các GOM với nhau.
@@ -161,7 +163,8 @@ Thiết bị phải giao tiếp ổn định với tất cả cấu hình baud/p
 
 | Chức năng | MCU pin | Ghi chú |
 | --- | --- | --- |
-| `UART_PC_TX/RX` | PA9 / PA10 — USART1 | TTL 3.3 V tới U1; TX/RX DMA |
+| `UART_PC_TX/RX` | PC6 / PC7 — USART6 | TTL 3.3 V tới U1; TX/RX DMA |
+| `UART_DEBUG_TX/RX` | PA9 / PA10 — USART1 | Debug CLI và STM32 UART bootloader |
 | `UART_GOM_TX/RX` | PA2 / PA3 — USART2 | TTL 3.3 V tới U2; TX/RX DMA |
 | `RLY_SEL_A/B/C` | PB0 / PB1 / PB2 | Địa chỉ kênh 0…7 tới U4 |
 | `RLY_COIL_EN` | PB10 | Mặc định low; đi qua logic fault chặn được |

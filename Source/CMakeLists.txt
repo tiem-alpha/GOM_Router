@@ -49,6 +49,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/gom/gom_firmware.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/relay/relay_matrix.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/board/board_io.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../App/log/log.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../App/log/SEGGER_RTT.c
 )
 
 # Add include paths
@@ -56,11 +58,12 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/gom
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/relay
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/board
+    ${CMAKE_CURRENT_SOURCE_DIR}/../App/log
 )
 
 # Add project symbols (macros)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user defined symbols
+    LOG_ENABLE
 )
 
 # Remove wrong libob.a library dependency when using cpp files
