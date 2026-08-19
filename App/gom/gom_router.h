@@ -27,12 +27,39 @@ typedef enum {
 } gom_command_id_t;
 typedef enum { GOM_VALUE_NONE, GOM_VALUE_BOOL, GOM_VALUE_NUMBER, GOM_VALUE_INTEGER, GOM_VALUE_TOKEN } gom_value_kind_t;
 typedef struct { gom_command_id_t id; uint8_t channel; uint8_t index; bool query; gom_value_kind_t value_kind; double number; int32_t integer; bool boolean; char token[12]; } gom_operation_t;
-typedef struct { bool identified; bool online; gom_model_t model; uint32_t capabilities; char serial[16]; char firmware[16]; } gom_device_t;
+typedef struct {
+    bool identified;
+    bool online;
+    bool configuration_loaded;
+    bool desynchronized;
+    gom_model_t model;
+    uint32_t capabilities;
+    uint32_t communication_faults;
+    char serial[16];
+    char firmware[16];
+} gom_device_t;
 typedef enum { GOM_ROUTER_OK, GOM_ROUTER_ERR_SYNTAX, GOM_ROUTER_ERR_RANGE, GOM_ROUTER_ERR_NO_CHANNEL, GOM_ROUTER_ERR_CAPABILITY, GOM_ROUTER_ERR_HIL_PENDING, GOM_ROUTER_ERR_COMPOUND, GOM_ROUTER_ERR_UNDEFINED } gom_router_status_t;
-typedef struct { uint8_t selected_channel; uint32_t timeout_ms; gom_device_t devices[GOM_CHANNEL_COUNT]; } gom_router_t;
+
+typedef struct {
+    uint8_t selected_channel;
+    uint32_t timeout_ms;
+    double lower_limit_ohm[GOM_CHANNEL_COUNT];
+    double upper_limit_ohm[GOM_CHANNEL_COUNT];
+    bool limits_enabled[GOM_CHANNEL_COUNT];
+    int16_t error_codes[8];
+    char error_text[8][40];
+    uint8_t error_head;
+    uint8_t error_count;
+    gom_device_t devices[GOM_CHANNEL_COUNT];
+} gom_router_t;
 
 void gom_router_init(gom_router_t *router);
 void gom_router_set_device(gom_router_t *router, uint8_t channel, gom_model_t model, bool identified);
+void gom_router_mark_configuration_loaded(gom_router_t *router, uint8_t channel, bool loaded);
+void gom_router_set_limits(gom_router_t *router, uint8_t channel, double lower_ohm, double upper_ohm);
+bool gom_router_value_in_limits(const gom_router_t *router, uint8_t channel, double value_ohm);
+void gom_router_push_error(gom_router_t *router, int16_t code, const char *text);
+void gom_router_pop_error(gom_router_t *router, char *out, size_t out_size);
 gom_router_status_t gom_router_execute(gom_router_t *router, const char *message, gom_operation_t *operation);
 gom_router_status_t gom_encode_operation(const gom_operation_t *operation, char *out, size_t out_size);
 const char *gom_router_status_text(gom_router_status_t status);

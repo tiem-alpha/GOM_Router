@@ -6,6 +6,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 add_library(gom850_router
     App/gom/gom_router.c
     App/gom/gom_command_encoder.c
+    App/gom/gom_response.c
     App/relay/relay_matrix.c)
 target_include_directories(gom850_router PUBLIC App/gom App/relay App/board)
 if (MSVC)

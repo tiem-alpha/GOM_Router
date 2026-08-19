@@ -2,10 +2,10 @@
 
 | Thuộc tính | Giá trị |
 | --- | --- |
-| Mục đích | Bộ điều khiển SCPI chọn 1 trong tối đa 8 máy GOM-804/GOM-805 qua RS-232 |
-| MCU | STM32F411, khuyến nghị package LQFP-100 |
-| Giao tiếp | 1 cổng RS-232 với PC và 8 cổng RS-232 với GOM; tại mọi thời điểm chỉ một GOM được nối vào UART_GOM |
-| Trạng thái an toàn | Mất nguồn, reset, watchdog hoặc lỗi interlock: tất cả relay mở |
+| Mục đích | Bộ điều khiển SCPI chọn 1 trong tối đa 8 máy GOM-804 qua RS-232 |
+| MCU | STM32F411RE, LQFP-64 |
+| Giao tiếp | 1 cổng RS-232 với PC; UART_GOM chỉ nối với đúng một GOM qua bộ chọn RS-232 break-before-make |
+| Trạng thái an toàn | Mất nguồn, reset, watchdog hoặc lỗi interlock: relay đo và bộ chọn RS-232 đều mở |
 | Tài liệu liên quan | `GOM_850_ROUTER_DESIGN.md` — kiến trúc firmware, trạng thái và SCPI |
 | Trạng thái tài liệu | Reference design để vẽ schematic/PCB; pinout, điện áp coil và kiểu DTE/DCE phải được xác nhận trước khi phát hành PCB |
 
@@ -22,22 +22,23 @@
                   |  U3 STM32F411  |---- SWD / NRST / BOOT0
                   +----------------+
                     |          |
-         relay select/EN     USART2
-                    |          |
-          U4 74HC138 + U5 ULN2803A
-                    |          |
-             K1 ... K8 (DPDT)  U2 MAX3232
-                    |          |
-        J3 ... J10: GOM RS-232 (mỗi cổng một nhánh)
+       SPI + latch/OE          USART2
+                     |          |
+        U4..U6 3 x 74HC595 + relay drivers
+                     |          |
+    K_MEAS1...K_MEAS16      U2 MAX3232
+    + K_RS232 selector          |
+                     |          |
+         J3 ... J10: GOM RS-232 (mỗi cổng một nhánh)
 
-    Feedback K1...K8 + fault latch ---- GPIO STM32
+     Relay/selector feedback + fault latch ---- GPIO STM32
 
     USART1 PA9/PA10 ------------------- Debug CLI / UART bootloader
 ```
 
-`USART2` chỉ nối với common bus của tám relay. Mỗi relay K1…K8 chuyển đồng thời hai đường dữ liệu: **GOM TXD → MAX3232 RX** và **MAX3232 TX → GOM RXD**. Không được nối song song TXD của các GOM với nhau.
+`USART2` không được nối song song với tám GOM. Bộ chọn RS-232 phải chuyển đồng thời hai đường dữ liệu: **GOM TXD → MAX3232 RX** và **MAX3232 TX → GOM RXD**, chỉ cho một nhánh đóng tại mọi thời điểm. Hai relay đo của mỗi GOM không có tác dụng cô lập RS-232.
 
-PC và toàn bộ GOM không dùng hardware flow control; do đó không đưa RTS/CTS, DTR/DSR vào schematic hay connector map. Relay DPDT là đủ để chuyển hai đường dữ liệu TXD/RXD.
+PC và toàn bộ GOM không dùng hardware flow control; do đó không đưa RTS/CTS, DTR/DSR vào schematic hay connector map. Bộ chọn RS-232 phải là relay/crosspoint có rating RS-232 và được điều khiển độc lập với relay đo.
 
 ## 2. Phân vùng schematic
 
@@ -235,3 +236,11 @@ Trước khi phát hành schematic/BOM, cần xác nhận trên thiết bị th�
 - Số cổng GOM cần lắp thực tế (1…8) và yêu cầu mở rộng/USB/nguồn dự phòng.
 
 Các mục này thay đổi chọn linh kiện và schematic chi tiết, nhưng không thay đổi các nguyên tắc bắt buộc: relay NO, chỉ một kênh vật lý được nối, one-hot có hardware enable, feedback độc lập và fault chỉ có quyền tắt relay.
+
+## 12. Revision — STM32F411RE LQFP64 and 74HC595
+
+Sections that describe STM32F411 LQFP-100, the 74HC138, and eight direct one-relay outputs are superseded by this revision. The production PCB uses STM32F411RE LQFP64 and three daisy-chained 74HC595 devices. Their 24 outputs map to 16 measurement relay drivers (two per GOM) and 8 one-hot RS-232-selector driver controls.
+
+`OE_N` must have an external pull that disables the relay-driver stage during reset, brownout, and MCU failure. A 74HC595 must run at 3.3 V, or be replaced by a 5-V 74HCT595/level-shifted design; a 3.3-V STM32 output does not guarantee a valid high level for a 5-V 74HC input. The 595 outputs only drive transistor/MOSFET/driver-array inputs, never relay coils.
+
+The RS-232 selector is mandatory even though each GOM already has two measurement relay contacts. It must isolate both RS-232 directions of every unselected GOM. Any schematic that ties GOM TX outputs together is rejected because it allows electrical contention and simultaneous replies.

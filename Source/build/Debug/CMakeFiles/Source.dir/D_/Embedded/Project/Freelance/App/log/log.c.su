@@ -1,0 +1,5 @@
+D:/Embedded/Project/Freelance/App/log/log.c:10:6:log_init	8	static
+D:/Embedded/Project/Freelance/App/log/log.c:16:6:log_print	16	static
+D:/Embedded/Project/Freelance/App/log/log.c:22:6:log_print_u32_hex	32	static
+D:/Embedded/Project/Freelance/App/log/log.c:39:6:log_print_u32_dec	32	static
+D:/Embedded/Project/Freelance/App/log/log.c:58:6:log_println	16	static

@@ -3,6 +3,7 @@
 #define GOM_CHANNEL_COUNT 8u
 #define GOM_WIRE_COMMAND_MAX 128u
 #define GOM_PC_MESSAGE_MAX 384u
+#define GOM_UART_RING_SIZE 512u /* Power of two: ISR-safe index wrap. */
 #define GOM_QUERY_TIMEOUT_MIN_MS 100u
 #define GOM_QUERY_TIMEOUT_MAX_MS 30000u
 #define GOM_RANGE_MIN_OHM 5.0e-3

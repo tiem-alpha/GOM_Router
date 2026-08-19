@@ -1,9 +1,8 @@
 #pragma once
-
+#include <stdbool.h>
 #include <stdint.h>
 
-/* HAL/GPIO adapter.  This is the only application module allowed to know pins. */
-void board_relay_all_off(void *context);
-void board_relay_set_one(void *context, uint8_t channel);
-void board_delay_ms(void *context, uint32_t delay_ms);
-
+/* Board adapter: the only app module that binds the HC595 driver to relays. */
+bool board_route_request_image(void *context, uint16_t image);
+bool board_route_busy(void *context);
+bool board_route_failed(void *context);

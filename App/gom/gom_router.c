@@ -1,5 +1,7 @@
 #include "gom_router.h"
 #include <ctype.h>
+#include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -43,8 +45,82 @@ static bool match_header(const char *input, const char *pattern, uint8_t *index)
 static const command_spec_t *find_command(const char *header, uint8_t *index) { size_t i; for (i=0;i<sizeof commands/sizeof commands[0];++i) if (match_header(header,commands[i].header,index)) return &commands[i]; return NULL; }
 static uint32_t capabilities(gom_model_t m) { return m==GOM_MODEL_805 ? GOM_CAP_OHM|GOM_CAP_COMPARE|GOM_CAP_TEMP|GOM_CAP_BINNING|GOM_CAP_DRY|GOM_CAP_DRIVE|GOM_CAP_PWM : m==GOM_MODEL_804 ? GOM_CAP_OHM|GOM_CAP_COMPARE|GOM_CAP_TEMP : 0; }
 
-void gom_router_init(gom_router_t *r) { memset(r,0,sizeof *r); r->timeout_ms=5000u; }
-void gom_router_set_device(gom_router_t *r, uint8_t channel, gom_model_t model, bool identified) { if (channel && channel<=GOM_CHANNEL_COUNT) { gom_device_t *d=&r->devices[channel-1u]; d->model=model; d->identified=identified; d->online=identified; d->capabilities=identified?capabilities(model):0; } }
+void gom_router_init(gom_router_t *r)
+{
+    uint8_t channel;
+
+    memset(r, 0, sizeof *r);
+    r->timeout_ms = 5000u;
+    for (channel = 0u; channel < GOM_CHANNEL_COUNT; ++channel) {
+        r->lower_limit_ohm[channel] = GOM_RANGE_MIN_OHM;
+        r->upper_limit_ohm[channel] = GOM_RANGE_MAX_OHM;
+    }
+}
+
+void gom_router_set_device(gom_router_t *r, uint8_t channel, gom_model_t model, bool identified)
+{
+    if (channel != 0u && channel <= GOM_CHANNEL_COUNT) {
+        gom_device_t *d = &r->devices[channel - 1u];
+        d->model = model;
+        d->identified = identified;
+        d->online = identified;
+        d->desynchronized = !identified;
+        d->capabilities = identified ? capabilities(model) : 0u;
+    }
+}
+
+void gom_router_mark_configuration_loaded(gom_router_t *r, uint8_t channel, bool loaded)
+{
+    if (channel != 0u && channel <= GOM_CHANNEL_COUNT) {
+        r->devices[channel - 1u].configuration_loaded = loaded;
+    }
+}
+
+void gom_router_set_limits(gom_router_t *r, uint8_t channel, double lower_ohm, double upper_ohm)
+{
+    if (channel != 0u && channel <= GOM_CHANNEL_COUNT && isfinite(lower_ohm) &&
+        isfinite(upper_ohm) && lower_ohm <= upper_ohm) {
+        r->lower_limit_ohm[channel - 1u] = lower_ohm;
+        r->upper_limit_ohm[channel - 1u] = upper_ohm;
+        r->limits_enabled[channel - 1u] = true;
+    }
+}
+
+bool gom_router_value_in_limits(const gom_router_t *r, uint8_t channel, double value_ohm)
+{
+    if (channel == 0u || channel > GOM_CHANNEL_COUNT || !isfinite(value_ohm)) return false;
+    return !r->limits_enabled[channel - 1u] ||
+           (value_ohm >= r->lower_limit_ohm[channel - 1u] &&
+            value_ohm <= r->upper_limit_ohm[channel - 1u]);
+}
+
+void gom_router_push_error(gom_router_t *r, int16_t code, const char *text)
+{
+    uint8_t index;
+
+    if (r->error_count == (uint8_t)(sizeof r->error_codes / sizeof r->error_codes[0])) {
+        r->error_head = (uint8_t)((r->error_head + 1u) % (sizeof r->error_codes / sizeof r->error_codes[0]));
+        r->error_count--;
+    }
+    index = (uint8_t)((r->error_head + r->error_count) % (sizeof r->error_codes / sizeof r->error_codes[0]));
+    r->error_codes[index] = code;
+    (void)snprintf(r->error_text[index], sizeof r->error_text[index], "%s", text);
+    r->error_count++;
+}
+
+void gom_router_pop_error(gom_router_t *r, char *out, size_t out_size)
+{
+    uint8_t index;
+
+    if (r->error_count == 0u) {
+        (void)snprintf(out, out_size, "0,No error");
+        return;
+    }
+    index = r->error_head;
+    (void)snprintf(out, out_size, "%d,%s", (int)r->error_codes[index], r->error_text[index]);
+    r->error_head = (uint8_t)((r->error_head + 1u) % (sizeof r->error_codes / sizeof r->error_codes[0]));
+    r->error_count--;
+}
 
 gom_router_status_t gom_router_execute(gom_router_t *r, const char *message, gom_operation_t *op) {
     char line[GOM_PC_MESSAGE_MAX+1], argument[80], *space; const command_spec_t *spec; char *end; uint8_t index=0; bool query;
@@ -59,8 +135,28 @@ gom_router_status_t gom_router_execute(gom_router_t *r, const char *message, gom
     if (!strcmp(line,"*TST") && query && !*argument) { memset(op,0,sizeof *op); op->query=true; op->integer=0; return GOM_ROUTER_OK; }
     if (!strcmp(line,"*RST") && !query && !*argument) { r->selected_channel=0; memset(op,0,sizeof *op); return GOM_ROUTER_OK; }
     if (!strcmp(line,"SYST:ERR") && query && !*argument) { memset(op,0,sizeof *op); op->query=true; return GOM_ROUTER_OK; }
-    if (!strcmp(line,"ROUT:CHAN")) { if(query) { memset(op,0,sizeof *op); op->integer=r->selected_channel; op->query=true; return GOM_ROUTER_OK; } long ch=strtol(argument,&end,10); if (*argument=='\0'||*end||ch<1||ch>8) return GOM_ROUTER_ERR_RANGE; r->selected_channel=(uint8_t)ch; return GOM_ROUTER_OK; }
+    if (!strcmp(line,"ROUT:CHAN")) { if(query) { memset(op,0,sizeof *op); op->integer=r->selected_channel; op->query=true; return GOM_ROUTER_OK; } long ch=strtol(argument,&end,10); if (*argument=='\0'||*end||ch<1||ch>8) return GOM_ROUTER_ERR_RANGE; r->selected_channel=(uint8_t)ch; memset(op,0,sizeof *op); op->integer=(int32_t)ch; return GOM_ROUTER_OK; }
     if (!strcmp(line,"ROUT:OPEN:ALL")) { if(query||*argument) return GOM_ROUTER_ERR_SYNTAX; r->selected_channel=0; return GOM_ROUTER_OK; }
+    if (!strcmp(line,"ROUT:LIM:LOW") || !strcmp(line,"ROUT:LIM:UPP")) {
+        double value;
+        if (r->selected_channel == 0u) return GOM_ROUTER_ERR_NO_CHANNEL;
+        if (query) {
+            memset(op, 0, sizeof *op);
+            op->query = true;
+            op->number = !strcmp(line, "ROUT:LIM:LOW") ? r->lower_limit_ohm[r->selected_channel - 1u] : r->upper_limit_ohm[r->selected_channel - 1u];
+            return GOM_ROUTER_OK;
+        }
+        value = strtod(argument, &end);
+        if (*argument == '\0' || *end != '\0' || !isfinite(value) || value < GOM_RANGE_MIN_OHM || value > GOM_RANGE_MAX_OHM) return GOM_ROUTER_ERR_RANGE;
+        if ((!strcmp(line, "ROUT:LIM:LOW") && value > r->upper_limit_ohm[r->selected_channel - 1u]) ||
+            (!strcmp(line, "ROUT:LIM:UPP") && value < r->lower_limit_ohm[r->selected_channel - 1u])) return GOM_ROUTER_ERR_RANGE;
+        if (!strcmp(line, "ROUT:LIM:LOW")) r->lower_limit_ohm[r->selected_channel - 1u] = value;
+        else r->upper_limit_ohm[r->selected_channel - 1u] = value;
+        r->limits_enabled[r->selected_channel - 1u] = true;
+        memset(op, 0, sizeof *op);
+        op->number = value;
+        return GOM_ROUTER_OK;
+    }
     if (!strcmp(line,"SYST:COMM:TIMEOUT")) { if(query) { memset(op,0,sizeof *op);op->query=true;op->integer=(int32_t)r->timeout_ms;return GOM_ROUTER_OK;} long t=strtol(argument,&end,10); if(*argument=='\0'||*end||t<GOM_QUERY_TIMEOUT_MIN_MS||t>GOM_QUERY_TIMEOUT_MAX_MS)return GOM_ROUTER_ERR_RANGE;r->timeout_ms=(uint32_t)t;return GOM_ROUTER_OK; }
     if (!r->selected_channel) return GOM_ROUTER_ERR_NO_CHANNEL;
     spec=find_command(line,&index); if(!spec) return GOM_ROUTER_ERR_UNDEFINED;
@@ -78,7 +174,7 @@ gom_router_status_t gom_router_execute(gom_router_t *r, const char *message, gom
     if (spec->value==GOM_VALUE_BOOL) { if(!strcmp(argument,"ON")||!strcmp(argument,"1"))op->boolean=true;else if(!strcmp(argument,"OFF")||!strcmp(argument,"0"))op->boolean=false;else return GOM_ROUTER_ERR_SYNTAX; }
     else if(spec->value==GOM_VALUE_TOKEN) { size_t count=strlen(argument); if(!is_token(argument)||count>=sizeof op->token||!valid_token(op->id,argument))return GOM_ROUTER_ERR_SYNTAX; memcpy(op->token,argument,count+1u); if(op->id==GOM_CMD_FUNCTION&&(!strcmp(argument,"BIN"))&&!(r->devices[r->selected_channel-1u].capabilities&GOM_CAP_BINNING))return GOM_ROUTER_ERR_CAPABILITY; }
     else if(op->id==GOM_CMD_CONFIG_RES && !strcmp(argument,"AUTO")) { op->value_kind=GOM_VALUE_BOOL;op->boolean=true; }
-    else { double n=strtod(argument,&end); if(end==argument||*end||n<spec->minimum||n>spec->maximum)return GOM_ROUTER_ERR_RANGE; op->number=n; op->integer=(int32_t)n; if(spec->value==GOM_VALUE_INTEGER && n!=(double)op->integer)return GOM_ROUTER_ERR_SYNTAX; }
+    else { double n=strtod(argument,&end); if(end==argument||*end||!isfinite(n)||n<spec->minimum||n>spec->maximum)return GOM_ROUTER_ERR_RANGE; op->number=n; op->integer=(int32_t)n; if(spec->value==GOM_VALUE_INTEGER && n!=(double)op->integer)return GOM_ROUTER_ERR_SYNTAX; }
     return GOM_ROUTER_OK;
 }
 

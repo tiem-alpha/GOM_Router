@@ -19,14 +19,26 @@ extern UART_HandleTypeDef huart6;
 #define BOARD_UART_GOM            (&huart2)
 #define BOARD_UART_DEBUG          (&huart1)
 
-/* K1..K8 coil outputs.  A relay is selected only by board_relay_set_one(). */
-#define BOARD_RELAY_PORT          GPIOB
-#define BOARD_RELAY_ALL_PINS      (GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | \
-                                   GPIO_PIN_7 | GPIO_PIN_8 | GPIO_PIN_12 | GPIO_PIN_13)
+/*
+ * 74HC595 hardware is introduced only after CubeMX has generated the SPI and
+ * latch/OE GPIO setup for STM32F411RE.  Until then this remains zero: every
+ * route operation fails closed and no legacy direct-relay GPIO is driven.
+ */
+#define BOARD_SHIFT_REGISTER_CONFIGURED 0u
+#define BOARD_SHIFT_REGISTER_COUNT      2u
+#define BOARD_SHIFT_REGISTER_BITS       16u
 
-/* Change this once if the relay driver board is active-low. */
-#define BOARD_RELAY_ACTIVE_STATE  GPIO_PIN_SET
-#define BOARD_RELAY_OFF_STATE     GPIO_PIN_RESET
+#if BOARD_SHIFT_REGISTER_CONFIGURED
+#define BOARD_SHIFT_REGISTER_DATA_PORT  GPIOA
+#define BOARD_SHIFT_REGISTER_DATA_PIN   GPIO_PIN_7
+#define BOARD_SHIFT_REGISTER_CLOCK_PORT GPIOA
+#define BOARD_SHIFT_REGISTER_CLOCK_PIN  GPIO_PIN_5
+#define BOARD_SHIFT_REGISTER_LATCH_PORT GPIOA
+#define BOARD_SHIFT_REGISTER_LATCH_PIN  GPIO_PIN_4
+#define BOARD_SHIFT_REGISTER_OE_PORT    GPIOB
+#define BOARD_SHIFT_REGISTER_OE_PIN     GPIO_PIN_0
+#endif
+
 
 /* Bounded transactions: a wedged GOM must never hold the router indefinitely. */
 #define BOARD_UART_BYTE_TIMEOUT_MS  100u

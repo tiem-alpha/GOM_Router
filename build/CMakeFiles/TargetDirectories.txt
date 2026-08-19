@@ -1,0 +1,5 @@
+D:/Embedded/Project/Freelance/build/CMakeFiles/gom850_router.dir
+D:/Embedded/Project/Freelance/build/CMakeFiles/gom850_host.dir
+D:/Embedded/Project/Freelance/build/CMakeFiles/RUN_TESTS.dir
+D:/Embedded/Project/Freelance/build/CMakeFiles/ALL_BUILD.dir
+D:/Embedded/Project/Freelance/build/CMakeFiles/ZERO_CHECK.dir

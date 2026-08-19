@@ -588,3 +588,13 @@ Các thông tin này không thay đổi nguyên tắc parser/mapping; chúng quy
 | REL/COMPARE/BIN units | Public SI ohm, explicit suffix, typed result `LO/PASS/HI` |
 | Boolean numeric quá rộng | Choice `ON/OFF` hoặc integer exact `0/1` |
 | Command docs mâu thuẫn | Machine-readable command matrix `UNVERIFIED/HIL_VERIFIED` |
+
+## 16. Implemented 74HC595 routing baseline
+
+The active firmware baseline uses a 24-bit route image: bits 0–15 are the two measurement-relay drivers for channels 1–8; bits 16–23 are the one-hot RS-232 selector. `relay_matrix_select()` always latches zero, waits break time, validates all-off feedback when installed, then latches exactly the two measurement bits plus one serial-selection bit for the requested channel.
+
+`ROUT:CHAN <n>` now performs this physical route transition before acknowledging the PC. `ROUT:OPEN:ALL` and `*RST` latch an all-off image. At boot, all eight channels are selected one-by-one, queried with `*IDN?`, then queried for `SENS:FUNC?`, `SENS:AUTO?`, and `SENS:RANG?`; unavailable devices remain offline. Runtime commands are rejected until a channel has completed that scan.
+
+Per-channel software acceptance limits are set and read through `ROUT:LIM:LOW <ohm>`, `ROUT:LIM:UPP <ohm>`, `ROUT:LIM:LOW?`, and `ROUT:LIM:UPP?`. `READ?` accepts only a finite numeric value within those limits. `+9.0000E+9`, `+9.9999E+9`, malformed replies, and values outside the configured limits enter the router SCPI error FIFO and are never returned as a valid measurement.
+
+`BOARD_SHIFT_REGISTER_CONFIGURED` remains `0` until legacy CubeMX has been used to configure STM32F411RE SPI, latch, and OE pins. In that state all route requests fail closed and no former direct-relay GPIO is driven.

@@ -39,6 +39,7 @@ class GomSimulator:
     firmware: str
     resistance_ohm: float
     noise_ppm: float
+    fault_mode: str = "normal"
     state: dict[str, str] = field(default_factory=dict)
     errors: deque[str] = field(default_factory=deque)
 
@@ -57,7 +58,13 @@ class GomSimulator:
         self.errors.append(f'{code},"{text}"')
 
     def _measurement(self) -> str:
-        """Return a deterministic-range reading with configurable zero-mean noise."""
+        """Return a normal, sentinel, or malformed reading for router tests."""
+        if self.fault_mode == "over-range":
+            return "+9.0000E+9"
+        if self.fault_mode == "hvp":
+            return "+9.9999E+9"
+        if self.fault_mode == "malformed":
+            return "NOT_A_NUMBER"
         relative_noise = self.noise_ppm * 1.0e-6
         measured = self.resistance_ohm * (1.0 + random.uniform(-relative_noise, relative_noise))
         if self.state["SENS:REL:STAT"] == "ON":
@@ -144,6 +151,29 @@ class GomSimulator:
         return None
 
 
+@dataclass
+class GomBusSimulator:
+    """Eight-device model used by host tests of the external serial selector."""
+
+    devices: dict[int, GomSimulator]
+    selected_channel: Optional[int] = None
+
+    def select(self, channel: int) -> bool:
+        if channel not in self.devices:
+            self.selected_channel = None
+            return False
+        self.selected_channel = channel
+        return True
+
+    def open_all(self) -> None:
+        self.selected_channel = None
+
+    def handle(self, command: str) -> Optional[str]:
+        if self.selected_channel is None:
+            return None
+        return self.devices[self.selected_channel].handle(command)
+
+
 def run_serial(simulator: GomSimulator, port: str, baudrate: int) -> None:
     """Serve one serial endpoint forever; each response is CR/LF terminated."""
     try:
@@ -186,6 +216,8 @@ def main() -> None:
     parser.add_argument("--firmware", default="SIM-1.0", help="Firmware value returned by *IDN?")
     parser.add_argument("--resistance", type=float, default=1.0, help="Nominal resistance in ohms")
     parser.add_argument("--noise-ppm", type=float, default=10.0, help="Peak measurement noise in ppm")
+    parser.add_argument("--fault-mode", choices=("normal", "over-range", "hvp", "malformed"), default="normal",
+                        help="READ? response mode for router fault testing")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
     if not OHM_MIN <= args.resistance <= OHM_MAX:
@@ -193,8 +225,8 @@ def main() -> None:
     if args.noise_ppm < 0:
         parser.error("--noise-ppm must be non-negative")
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(asctime)s %(message)s")
-    run_serial(GomSimulator(args.model, args.serial, args.firmware, args.resistance, args.noise_ppm),
-               args.port, args.baud)
+    run_serial(GomSimulator(args.model, args.serial, args.firmware, args.resistance, args.noise_ppm,
+                            args.fault_mode), args.port, args.baud)
 
 
 if __name__ == "__main__":

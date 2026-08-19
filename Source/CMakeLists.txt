@@ -46,9 +46,11 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/gom/gom_router.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/gom/gom_command_encoder.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../App/gom/gom_response.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/gom/gom_firmware.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/relay/relay_matrix.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/board/board_io.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../App/board/board_shift_register.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/log/log.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/log/SEGGER_RTT.c
 )
