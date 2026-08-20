@@ -1,0 +1,7 @@
+/home/nguyentiem/Embedded/Freelance/GOM_Router/Source/build/arm/Debug/CMakeFiles/Source.dir
+/home/nguyentiem/Embedded/Freelance/GOM_Router/Source/build/arm/Debug/CMakeFiles/edit_cache.dir
+/home/nguyentiem/Embedded/Freelance/GOM_Router/Source/build/arm/Debug/CMakeFiles/rebuild_cache.dir
+/home/nguyentiem/Embedded/Freelance/GOM_Router/Source/build/arm/Debug/cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir
+/home/nguyentiem/Embedded/Freelance/GOM_Router/Source/build/arm/Debug/cmake/stm32cubemx/CMakeFiles/FreeRTOS.dir
+/home/nguyentiem/Embedded/Freelance/GOM_Router/Source/build/arm/Debug/cmake/stm32cubemx/CMakeFiles/edit_cache.dir
+/home/nguyentiem/Embedded/Freelance/GOM_Router/Source/build/arm/Debug/cmake/stm32cubemx/CMakeFiles/rebuild_cache.dir

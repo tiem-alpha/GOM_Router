@@ -1,0 +1,5 @@
+/home/nguyentiem/Embedded/Freelance/GOM_Router/App/board/board_shift_register.c:9:6:board_shift_register_init	4	static
+/home/nguyentiem/Embedded/Freelance/GOM_Router/App/board/board_shift_register.c:17:6:board_shift_register_request	16	static
+/home/nguyentiem/Embedded/Freelance/GOM_Router/App/board/board_shift_register.c:33:6:board_shift_register_step	8	static
+/home/nguyentiem/Embedded/Freelance/GOM_Router/App/board/board_shift_register.c:50:6:board_shift_register_busy	4	static
+/home/nguyentiem/Embedded/Freelance/GOM_Router/App/board/board_shift_register.c:51:6:board_shift_register_failed	4	static

@@ -44,28 +44,40 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../App/gom/gom_router.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../App/gom/gom_command_encoder.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../App/gom/gom_response.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/gom/gom_firmware.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../App/app/router_application.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../App/scpi/router_scpi.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/relay/relay_matrix.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/board/board_io.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/board/board_shift_register.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/log/log.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/log/SEGGER_RTT.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../App/thirdparty/scpi-parser/libscpi/src/error.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../App/thirdparty/scpi-parser/libscpi/src/fifo.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../App/thirdparty/scpi-parser/libscpi/src/ieee488.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../App/thirdparty/scpi-parser/libscpi/src/minimal.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../App/thirdparty/scpi-parser/libscpi/src/parser.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../App/thirdparty/scpi-parser/libscpi/src/units.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../App/thirdparty/scpi-parser/libscpi/src/utils.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../App/thirdparty/scpi-parser/libscpi/src/lexer.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../App/thirdparty/scpi-parser/libscpi/src/expression.c
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/gom
+    ${CMAKE_CURRENT_SOURCE_DIR}/../App/app
+    ${CMAKE_CURRENT_SOURCE_DIR}/../App/scpi
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/relay
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/board
     ${CMAKE_CURRENT_SOURCE_DIR}/../App/log
+    ${CMAKE_CURRENT_SOURCE_DIR}/../App/thirdparty/scpi-parser/libscpi/inc
 )
 
 # Add project symbols (macros)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     LOG_ENABLE
+    SCPI_USER_CONFIG
 )
 
 # Remove wrong libob.a library dependency when using cpp files

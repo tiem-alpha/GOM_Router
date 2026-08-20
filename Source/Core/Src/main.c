@@ -19,10 +19,12 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "gom_firmware.h"
+#include "router_application.h"
 #include "log.h"
 
 /* USER CODE END Includes */
@@ -83,6 +85,32 @@ void StartDefaultTask(void *argument);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+/* Static-only FreeRTOS needs application-owned memory for the idle task. The
+ * router itself is the only application task created by this project. */
+static StaticTask_t idle_task_tcb;
+static StackType_t idle_task_stack[configMINIMAL_STACK_SIZE];
+
+void vApplicationGetIdleTaskMemory(StaticTask_t **tcb, StackType_t **stack,
+                                   uint32_t *stack_size)
+{
+  *tcb = &idle_task_tcb;
+  *stack = idle_task_stack;
+  *stack_size = configMINIMAL_STACK_SIZE;
+}
+
+#if (configUSE_TIMERS == 1)
+static StaticTask_t timer_task_tcb;
+static StackType_t timer_task_stack[configTIMER_TASK_STACK_DEPTH];
+
+void vApplicationGetTimerTaskMemory(StaticTask_t **tcb, StackType_t **stack,
+                                    uint32_t *stack_size)
+{
+  *tcb = &timer_task_tcb;
+  *stack = timer_task_stack;
+  *stack_size = configTIMER_TASK_STACK_DEPTH;
+}
+#endif
+
 /* USER CODE END 0 */
 
 /**
@@ -121,10 +149,10 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
-  log_println("[BOOT] UART1=debug UART6=router UART2=GOM");
+  log_println("[BOOT] UART1=debug UART2=PC UART6=GOM");
   /* Application init is after GPIO/UART init: relay_matrix_init() forces all
      eight coils off before the scheduler can accept any PC command. */
-  gom_firmware_init();
+  router_application_init();
 
   /* USER CODE END 2 */
 
@@ -149,7 +177,8 @@ int main(void)
 
   /* Create the thread(s) */
   /* creation of defaultTask */
-  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+  defaultTaskHandle = router_application_create_task(StartDefaultTask,
+                                                      &defaultTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -324,9 +353,9 @@ static void MX_WWDG_Init(void)
 
   /* USER CODE END WWDG_Init 1 */
   hwwdg.Instance = WWDG;
-  hwwdg.Init.Prescaler = WWDG_PRESCALER_1;
-  hwwdg.Init.Window = 64;
-  hwwdg.Init.Counter = 64;
+  hwwdg.Init.Prescaler = WWDG_PRESCALER_8;
+  hwwdg.Init.Window = 127;
+  hwwdg.Init.Counter = 127;
   hwwdg.Init.EWIMode = WWDG_EWI_DISABLE;
   if (HAL_WWDG_Init(&hwwdg) != HAL_OK)
   {
@@ -391,8 +420,11 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
+  /* PB6 is 74HC595 /OE (active low): keep relay outputs disabled during
+     peripheral initialisation. */
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_3|GPIO_PIN_4
-                          |GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_8, GPIO_PIN_RESET);
+                          |GPIO_PIN_5|GPIO_PIN_7|GPIO_PIN_8, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_SET);
 
   /*Configure GPIO pin : PC13 */
   GPIO_InitStruct.Pin = GPIO_PIN_13;
@@ -430,7 +462,7 @@ void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
   /* This task is deliberately the sole owner of the GOM UART and relays. */
-  gom_firmware_task(argument);
+  router_application_task(argument);
   /* USER CODE END 5 */
 }
 
@@ -464,8 +496,9 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* Fail safe: an init/runtime HAL fault must release every GOM channel. */
-  GPIOB->BSRR = ((uint32_t)(GPIO_PIN_3|GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|
-                            GPIO_PIN_7|GPIO_PIN_8|GPIO_PIN_12|GPIO_PIN_13) << 16u);
+  /* /OE is active low. A direct high write disables HC595 outputs even when
+     application state or shift-register contents are no longer trustworthy. */
+  GPIOB->BSRR = GPIO_PIN_6;
   log_println("[FATAL] Error_Handler: all relays off");
   __disable_irq();
   while (1)

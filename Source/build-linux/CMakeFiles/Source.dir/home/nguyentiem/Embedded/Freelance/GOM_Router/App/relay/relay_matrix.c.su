@@ -1,0 +1,6 @@
+/home/nguyentiem/Embedded/Freelance/GOM_Router/App/relay/relay_matrix.c:6:17:route_mask	16	static
+/home/nguyentiem/Embedded/Freelance/GOM_Router/App/relay/relay_matrix.c:11:6:relay_matrix_init	24	static
+/home/nguyentiem/Embedded/Freelance/GOM_Router/App/relay/relay_matrix.c:27:6:relay_matrix_emergency_off	16	static
+/home/nguyentiem/Embedded/Freelance/GOM_Router/App/relay/relay_matrix.c:36:6:relay_matrix_request	24	static
+/home/nguyentiem/Embedded/Freelance/GOM_Router/App/relay/relay_matrix.c:47:6:relay_matrix_step	24	static
+/home/nguyentiem/Embedded/Freelance/GOM_Router/App/relay/relay_matrix.c:82:6:relay_matrix_ready	16	static

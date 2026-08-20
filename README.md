@@ -1,36 +1,44 @@
 # GOM-850 controller firmware core
 
-Firmware core for an STM32F411 router that safely selects one of eight
-GOM-804/GOM-805 milliohm meters.  The core is portable C11 so its command,
-capability and relay safety logic can be tested on a PC before CubeMX/HAL and
-FreeRTOS are connected.
+tôi muốn tạo ứng dụng như sau PC <-UART2-> stm32 <--UART6-> 8  GOM (GOM1, GOM2 ... GOM8)
+PC giao tiếp với stm32f411 bằng SCPI và stm32 bới GOM bằng SCPI 
+tại một thời điểm stm32 chỉ chọn 1 gom thôn qua điều khiển GPIO relay , mỗi gom 2 relay , stm32 không dùng trực tiếp GPIO mà dùng 74HC595
+stm32 nhận lệnh từ pc -> parser PC request -> handle -> chọn GOM -> gửi GOM command -> nhận  response từ GOM -> parser GOM respone -> xử lý-> gửi PC response. 
+khi khỏi động lênh POR ngoài inint các thức cần thiết sau đó cần đọc cấu hình từng GOM quản lý cấu hình từng GOM 
+các thong tin kĩ thuật của GOM để trong GOM_850_introduction.md
+các lệnh scpi GOM hỗ trợ để trong GOM_850_Command.md
+
+yêu cầu :
+  code cần sử dujgn thư viện parser có sắn không tự viết parser , cần tham khảo ở đây /home/nguyentiem/Embedded/Freelance/GOM_Router/reference
+  viết state machine rõ ràng
+  thời gian đáp ứng và xử lý nhanh , 
+  dùng ring buffer cho RX UART đảm bảo không miss dữ liệu 
+  không dùng cấp phát động 
+  độc lập phần cứng 
+  phân tầng rõ ràng 
+  các hàm có api document đầy đủ
+  dùng một task duy nhất 
+
+  tuân thủ codign convention 
+
 
 ## Build and test
 
 ```powershell
-cmake -S . -B build
-cmake --build build
-ctest --test-dir build --output-on-failure
+cd Source
+cmake --preset Debug
+cmake --build --preset Debug
 ```
-
-`App/gom/gom_router.c` is the only PC-facing command gate.  It accepts one
-SCPI program message, produces a typed `gom_operation_t`, and never forwards
-the caller's string to the meter.  `gom_command_encoder.c` produces the UART
-SCPI text from a whitelisted command ID only.
-
-The table covers the documented GOM-805 command families: measurement,
-compare, binning, temperature/compensation/conversion, trigger/setup,
-dry-circuit, drive and PWM.  Entries whose supplied documentation is
-contradictory are deliberately `HIL_PENDING`; production code rejects them
-until their exact model/firmware behaviour has been verified on hardware.
 
 ## STM32 integration
 
 The STM32F411 integration is now in `App/gom/gom_firmware.c`:
 
-- USART6 (PC6/PC7) is `UART_PC`; USART2 (PA2/PA3) is the shared `UART_GOM`.
-  USART1 (PA9/PA10) is reserved for the debug CLI and STM32 UART bootloader.
-- K1..K8 use PB3, PB4, PB5, PB6, PB7, PB8, PB12 and PB13 respectively.
+- USART2 (PA2/PA3) is `UART_PC`; USART6 (PC6/PC7) is the shared `UART_GOM`.
+  USART1 (PA9/PA10) is reserved for RTT/debug and STM32 UART bootloader.
+- Two cascaded 74HC595 are connected as `PB3=DATA`, `PB4=CLOCK`,
+  `PB5=LATCH`, and `PB6=/OE`. Their 16 outputs drive two relay inputs per
+  GOM; `PB6` is high from reset until a zero relay image has been latched.
 - Send `ROUT:CHAN <1..8>`, then `SYST:DEV:IDN?` to identify that GOM before
   using model-specific commands. `ROUT:OPEN:ALL` opens every relay.
 - One owner task handles the complete transaction. A timeout, UART error or
@@ -43,17 +51,20 @@ The STM32F411 integration is now in `App/gom/gom_firmware.c`:
    contains no SCPI policy.
 2. **Relay safety layer** (`App/relay`) guarantees one-hot selection and
    break-before-make; it can latch an interlock fault.
-3. **Protocol policy** (`App/gom/gom_router.c`) parses and validates typed,
-   whitelisted commands, capabilities and ranges. It never owns a UART.
-4. **Transport owner** (`gom_firmware.c`) is the only code allowed to use the
-   GOM UART or call the relay layer. It encodes typed operations, applies a
-   bounded timeout and safe-opens on every transport failure.
+3. **application** App/aplication 
+4. SCPI `App/scpi` contains the PC SCPI server and typed GOM command mapping.
+5. Transport is owned by `App/gom`: UART ISR callbacks only fill fixed rings;
+   the one application task drains them and drives the transaction state machine.
+6. thirdparty App/thirdparty/scpi-parser chưas thư viện parser scpi cung cấp sẵn 
 
-This separation keeps CubeMX-regenerated code distinct from application
-logic, prevents raw-command injection, and makes router and relay policy
-host-testable. The pending commands remain blocked until the exact connected
-model/firmware is HIL-verified; enabling an unverified electrical command is
-not considered safe support.
+The PC API currently supports router commands (`*IDN?`, `*RST`, `*TST?`,
+`SYST:ERR?`, `ROUT:CHAN`, `ROUT:OPEN:ALL`, `SYST:COMM:TIMEOUT`) and the
+verified base GOM commands (`SYST:DEV:IDN?`, `SYST:DEV:ERR?`, `READ?`,
+`SENS:FUNC`, `SENS:AUTO`, `SENS:RANG`, `SENS:SPE`, and relative settings).
+Only typed, whitelisted commands are encoded for USART6; PC text is never
+forwarded directly to a GOM.
+
+
 
 ## GOM serial simulator
 
@@ -65,14 +76,3 @@ endpoint and launch the simulator on the other:
 python -m pip install -r tools/requirements.txt
 python tools/gom_simulator.py --port COM11 --model GOM-805 --resistance 0.125
 ```
-
-It supports the command families in the firmware whitelist, returns an IDN
-string, maintains set/query configuration state, supports `READ?`, and adds
-adjustable measurement noise with `--noise-ppm`.
-
-Call `gom_router_execute()` only from `ScpiTask` after `scpi-parser` has
-framed one line (or replace the small host parser with individual callbacks).
-Pass the returned operation to `GomManagerTask`; that single task calls
-`gom_encode_operation()`, owns UART_GOM and invokes `relay_matrix_select()`.
-Hardware callbacks in `relay_matrix_io_t` must drive the real relay enable and
-read independent feedback.  No PC raw-command or write/query bridge exists.

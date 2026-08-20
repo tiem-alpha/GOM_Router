@@ -4,11 +4,18 @@ project(gom850_router C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 add_library(gom850_router
-    App/gom/gom_router.c
-    App/gom/gom_command_encoder.c
-    App/gom/gom_response.c
     App/relay/relay_matrix.c)
-target_include_directories(gom850_router PUBLIC App/gom App/relay App/board)
+target_include_directories(gom850_router PUBLIC App/core App/gom App/app App/middle/scpi App/relay App/board Source/thirdparty/scpi-parser/libscpi/inc)
+target_sources(gom850_router PRIVATE
+    Source/thirdparty/scpi-parser/libscpi/src/error.c
+    Source/thirdparty/scpi-parser/libscpi/src/fifo.c
+    Source/thirdparty/scpi-parser/libscpi/src/ieee488.c
+    Source/thirdparty/scpi-parser/libscpi/src/minimal.c
+    Source/thirdparty/scpi-parser/libscpi/src/parser.c
+    Source/thirdparty/scpi-parser/libscpi/src/units.c
+    Source/thirdparty/scpi-parser/libscpi/src/utils.c
+    Source/thirdparty/scpi-parser/libscpi/src/lexer.c
+    Source/thirdparty/scpi-parser/libscpi/src/expression.c)
 if (MSVC)
   target_compile_options(gom850_router PRIVATE /W4 /WX)
 else()
