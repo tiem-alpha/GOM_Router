@@ -26,7 +26,7 @@ void relay_matrix_init(relay_matrix_t *relay, const relay_matrix_io_t *io)
 
 void relay_matrix_emergency_off(relay_matrix_t *relay)
 {
-    if (!relay->io.busy(relay->io.context) && !relay->io.request_image(relay->io.context, 0u)) relay->interlock_fault = true;
+    relay->io.emergency_disable(relay->io.context);
     relay->selected_channel = 0u;
     relay->requested_channel = 0u;
     relay->state = relay->interlock_fault ? RELAY_FAULT : RELAY_OPENING;
@@ -72,7 +72,7 @@ void relay_matrix_step(relay_matrix_t *relay, uint32_t now_ms)
     }
     return;
 fault:
-    (void)relay->io.request_image(relay->io.context, 0u);
+    relay->io.emergency_disable(relay->io.context);
     relay->selected_channel = 0u;
     relay->interlock_fault = true;
     relay->fault_epoch++;

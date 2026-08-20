@@ -17,6 +17,46 @@ static char scpi_error_info[ROUTER_SCPI_ERROR_INFO_SIZE];
 static scpi_error_t scpi_errors[ROUTER_SCPI_ERROR_QUEUE_SIZE];
 static bool pending_query;
 
+typedef bool (*gom_request_fn_t)(scpi_t *context, gom_operation_t *operation);
+
+/*
+ * The GOM command whitelist.  To add a command, add exactly one row here,
+ * choose (or add) a typed request function, and add its wire encoding in
+ * encode_operation().  The PC never supplies the GOM wire command directly.
+ */
+typedef struct {
+    const char *pattern;
+    gom_operation_id_t operation_id;
+    bool query;
+    gom_response_type_t response_type;
+    gom_request_fn_t request;
+} gom_command_map_t;
+
+#define GOM_COMMAND_MAP(X) \
+    X(IDN, "SYSTem:DEVice:IDN?", GOM_OP_IDN, true, GOM_RESPONSE_TEXT, request_none) \
+    X(DEVICE_ERROR, "SYSTem:DEVice:ERRor?", GOM_OP_DEVICE_ERROR, true, GOM_RESPONSE_TEXT, request_none) \
+    X(READ, "READ?", GOM_OP_READ, true, GOM_RESPONSE_NUMBER, request_none) \
+    X(TRIGGER, "*TRG", GOM_OP_TRIGGER, false, GOM_RESPONSE_NONE, request_none) \
+    X(FUNCTION, "SENSe:FUNCtion", GOM_OP_FUNCTION, false, GOM_RESPONSE_NONE, request_function) \
+    X(FUNCTION_QUERY, "SENSe:FUNCtion?", GOM_OP_FUNCTION, true, GOM_RESPONSE_TEXT, request_none) \
+    X(AUTO, "SENSe:AUTo", GOM_OP_AUTO, false, GOM_RESPONSE_NONE, request_boolean) \
+    X(AUTO_QUERY, "SENSe:AUTo?", GOM_OP_AUTO, true, GOM_RESPONSE_TEXT, request_none) \
+    X(RANGE, "SENSe:RANGe", GOM_OP_RANGE, false, GOM_RESPONSE_NONE, request_range) \
+    X(RANGE_QUERY, "SENSe:RANGe?", GOM_OP_RANGE, true, GOM_RESPONSE_NUMBER, request_none) \
+    X(SPEED, "SENSe:SPEed", GOM_OP_SPEED, false, GOM_RESPONSE_NONE, request_speed) \
+    X(SPEED_QUERY, "SENSe:SPEed?", GOM_OP_SPEED, true, GOM_RESPONSE_TEXT, request_none) \
+    X(RELATIVE_STATE, "SENSe:RELative:STATe", GOM_OP_RELATIVE_STATE, false, GOM_RESPONSE_NONE, request_boolean) \
+    X(RELATIVE_STATE_QUERY, "SENSe:RELative:STATe?", GOM_OP_RELATIVE_STATE, true, GOM_RESPONSE_TEXT, request_none) \
+    X(RELATIVE_DATA, "SENSe:RELative:DATa", GOM_OP_RELATIVE_DATA, false, GOM_RESPONSE_NONE, request_number) \
+    X(RELATIVE_DATA_QUERY, "SENSe:RELative:DATa?", GOM_OP_RELATIVE_DATA, true, GOM_RESPONSE_NUMBER, request_none)
+
+typedef enum {
+#define GOM_MAP_ENUM(name, scpi_pattern, operation, query, response, request) GOM_MAP_##name,
+    GOM_COMMAND_MAP(GOM_MAP_ENUM)
+#undef GOM_MAP_ENUM
+    GOM_MAP_COUNT
+} gom_command_map_id_t;
+
 static bool parse_response_number(const char *text, double *value)
 {
     const char *cursor = text;
@@ -145,6 +185,7 @@ static scpi_result_t cmd_route_channel_q(scpi_t *context)
 
 static scpi_result_t cmd_route_open_all(scpi_t *context)
 {
+    (void)context;
     gom_firmware_open_all();
     return SCPI_RES_OK;
 }
@@ -165,106 +206,83 @@ static scpi_result_t cmd_timeout_q(scpi_t *context)
     return SCPI_RES_OK;
 }
 
-static scpi_result_t cmd_idn(scpi_t *context)
+static bool request_none(scpi_t *context, gom_operation_t *operation)
 {
-    const gom_operation_t operation = {.id = GOM_OP_IDN, .query = true};
-    return submit(context, &operation);
+    (void)context;
+    (void)operation;
+    return true;
 }
 
-static scpi_result_t cmd_device_error(scpi_t *context)
-{
-    const gom_operation_t operation = {.id = GOM_OP_DEVICE_ERROR, .query = true};
-    return submit(context, &operation);
-}
-
-static scpi_result_t cmd_read(scpi_t *context)
-{
-    const gom_operation_t operation = {.id = GOM_OP_READ, .query = true};
-    return submit(context, &operation);
-}
-
-static scpi_result_t cmd_function(scpi_t *context)
+static bool request_function(scpi_t *context, gom_operation_t *operation)
 {
     const scpi_choice_def_t choices[] = {{"OHM", 0}, {"COMP", 1}, {"BIN", 2},
-                                         {"TC", 3}, {"TCONV", 4}, {"DIODE", 5},
+                                         {"TC", 3}, {"TCONV", 4}, {"SCAN", 5},
+                                         {"DIODE", 6},
                                          SCPI_CHOICE_LIST_END};
-    static const char *const tokens[] = {"OHM", "COMP", "BIN", "TC", "TCONV", "DIODE"};
-    gom_operation_t operation = {.id = GOM_OP_FUNCTION};
+    static const char *const tokens[] = {"OHM", "COMP", "BIN", "TC", "TCONV", "SCAN", "DIODE"};
     int32_t choice;
-    if (!SCPI_ParamChoice(context, choices, &choice, TRUE)) return SCPI_RES_ERR;
-    memcpy(operation.token, tokens[choice], strlen(tokens[choice]) + 1u);
-    return submit(context, &operation);
+    if (!SCPI_ParamChoice(context, choices, &choice, TRUE)) return false;
+    memcpy(operation->token, tokens[choice], strlen(tokens[choice]) + 1u);
+    return true;
 }
 
-static scpi_result_t cmd_function_q(scpi_t *context)
-{
-    const gom_operation_t operation = {.id = GOM_OP_FUNCTION, .query = true};
-    return submit(context, &operation);
-}
-
-static scpi_result_t cmd_auto(scpi_t *context)
+static bool request_boolean(scpi_t *context, gom_operation_t *operation)
 {
     const scpi_choice_def_t choices[] = {{"OFF", 0}, {"ON", 1}, SCPI_CHOICE_LIST_END};
-    gom_operation_t operation = {.id = GOM_OP_AUTO};
     int32_t enabled;
-    if (!SCPI_ParamChoice(context, choices, &enabled, TRUE)) return SCPI_RES_ERR;
-    operation.boolean = enabled != 0;
-    return submit(context, &operation);
+    if (!SCPI_ParamChoice(context, choices, &enabled, TRUE)) return false;
+    operation->boolean = enabled != 0;
+    return true;
 }
 
-static scpi_result_t cmd_auto_q(scpi_t *context)
+static bool request_range(scpi_t *context, gom_operation_t *operation)
 {
-    const gom_operation_t operation = {.id = GOM_OP_AUTO, .query = true};
-    return submit(context, &operation);
+    if (!SCPI_ParamDouble(context, &operation->number, TRUE) || !isfinite(operation->number) ||
+        operation->number < GOM_RANGE_MIN_OHM || operation->number > GOM_RANGE_MAX_OHM) {
+        return false;
+    }
+    return true;
 }
 
-static scpi_result_t cmd_range(scpi_t *context)
+static bool request_number(scpi_t *context, gom_operation_t *operation)
 {
-    gom_operation_t operation = {.id = GOM_OP_RANGE};
-    if (!SCPI_ParamDouble(context, &operation.number, TRUE) || !isfinite(operation.number) ||
-        operation.number < GOM_RANGE_MIN_OHM || operation.number > GOM_RANGE_MAX_OHM) {
+    return SCPI_ParamDouble(context, &operation->number, TRUE) && isfinite(operation->number);
+}
+
+static bool request_speed(scpi_t *context, gom_operation_t *operation)
+{
+    const scpi_choice_def_t choices[] = {{"FAST", 0}, {"SLOW", 1}, SCPI_CHOICE_LIST_END};
+    int32_t choice;
+    if (!SCPI_ParamChoice(context, choices, &choice, TRUE)) return false;
+    memcpy(operation->token, choice == 0 ? "FAST" : "SLOW", 5u);
+    return true;
+}
+
+#define GOM_MAP_ENTRY(name, scpi_pattern, operation, query, response, request) \
+    {scpi_pattern, operation, query, response, request},
+static const gom_command_map_t gom_command_map[] = {GOM_COMMAND_MAP(GOM_MAP_ENTRY)};
+#undef GOM_MAP_ENTRY
+
+_Static_assert(sizeof(gom_command_map) / sizeof(gom_command_map[0]) == GOM_MAP_COUNT,
+               "GOM command map tags must remain contiguous");
+
+static scpi_result_t cmd_gom_mapped(scpi_t *context)
+{
+    const int32_t tag = SCPI_CmdTag(context);
+    const gom_command_map_t *definition;
+    gom_operation_t operation;
+
+    if (tag < 0 || tag >= (int32_t)GOM_MAP_COUNT) return SCPI_RES_ERR;
+    definition = &gom_command_map[tag];
+
+    memset(&operation, 0, sizeof(operation));
+    operation.id = definition->operation_id;
+    operation.query = definition->query;
+    operation.response_type = definition->response_type;
+    if (!definition->request(context, &operation)) {
         SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
         return SCPI_RES_ERR;
     }
-    return submit(context, &operation);
-}
-
-static scpi_result_t cmd_range_q(scpi_t *context)
-{
-    const gom_operation_t operation = {.id = GOM_OP_RANGE, .query = true};
-    return submit(context, &operation);
-}
-
-static scpi_result_t cmd_speed(scpi_t *context)
-{
-    const scpi_choice_def_t choices[] = {{"FAST", 0}, {"SLOW", 1}, SCPI_CHOICE_LIST_END};
-    gom_operation_t operation = {.id = GOM_OP_SPEED};
-    int32_t choice;
-    if (!SCPI_ParamChoice(context, choices, &choice, TRUE)) return SCPI_RES_ERR;
-    memcpy(operation.token, choice == 0 ? "FAST" : "SLOW", 5u);
-    return submit(context, &operation);
-}
-
-static scpi_result_t cmd_speed_q(scpi_t *context)
-{
-    const gom_operation_t operation = {.id = GOM_OP_SPEED, .query = true};
-    return submit(context, &operation);
-}
-
-static scpi_result_t cmd_relative_state(scpi_t *context)
-{
-    const scpi_choice_def_t choices[] = {{"OFF", 0}, {"ON", 1}, SCPI_CHOICE_LIST_END};
-    gom_operation_t operation = {.id = GOM_OP_RELATIVE_STATE};
-    int32_t enabled;
-    if (!SCPI_ParamChoice(context, choices, &enabled, TRUE)) return SCPI_RES_ERR;
-    operation.boolean = enabled != 0;
-    return submit(context, &operation);
-}
-
-static scpi_result_t cmd_relative_data(scpi_t *context)
-{
-    gom_operation_t operation = {.id = GOM_OP_RELATIVE_DATA};
-    if (!SCPI_ParamDouble(context, &operation.number, TRUE) || !isfinite(operation.number)) return SCPI_RES_ERR;
     return submit(context, &operation);
 }
 
@@ -287,19 +305,10 @@ static const scpi_command_t commands[] = {
     {.pattern = "ROUTe:OPEN:ALL", .callback = cmd_route_open_all},
     {.pattern = "SYSTem:COMM:TIMEout", .callback = cmd_timeout},
     {.pattern = "SYSTem:COMM:TIMEout?", .callback = cmd_timeout_q},
-    {.pattern = "SYSTem:DEVice:IDN?", .callback = cmd_idn},
-    {.pattern = "SYSTem:DEVice:ERRor?", .callback = cmd_device_error},
-    {.pattern = "READ?", .callback = cmd_read},
-    {.pattern = "SENSe:FUNCtion", .callback = cmd_function},
-    {.pattern = "SENSe:FUNCtion?", .callback = cmd_function_q},
-    {.pattern = "SENSe:AUTo", .callback = cmd_auto},
-    {.pattern = "SENSe:AUTo?", .callback = cmd_auto_q},
-    {.pattern = "SENSe:RANGe", .callback = cmd_range},
-    {.pattern = "SENSe:RANGe?", .callback = cmd_range_q},
-    {.pattern = "SENSe:SPEed", .callback = cmd_speed},
-    {.pattern = "SENSe:SPEed?", .callback = cmd_speed_q},
-    {.pattern = "SENSe:RELative:STATe", .callback = cmd_relative_state},
-    {.pattern = "SENSe:RELative:DATa", .callback = cmd_relative_data},
+#define GOM_SCPI_ENTRY(name, scpi_pattern, operation, query, response, request) \
+    {.pattern = scpi_pattern, .callback = cmd_gom_mapped, .tag = GOM_MAP_##name},
+    GOM_COMMAND_MAP(GOM_SCPI_ENTRY)
+#undef GOM_SCPI_ENTRY
     SCPI_CMD_LIST_END,
 };
 
@@ -323,12 +332,19 @@ void router_scpi_init(void)
 void router_scpi_input(const char *line)
 {
     size_t length;
-    if (line == NULL || pending_query || strchr(line, ';') != NULL) {
+
+    if (line == NULL || strchr(line, ';') != NULL) {
         SCPI_ErrorPush(&scpi_context, SCPI_ERROR_SYNTAX);
         return;
     }
     length = strlen(line);
     if (length == 0u || length > GOM_PC_LINE_MAX) return;
+    /* Emergency open and reset are the only commands allowed to cancel a query. */
+    if (pending_query && !SCPI_Match("ROUTe:OPEN:ALL", line, length) &&
+        !SCPI_Match("*RST", line, length)) {
+        SCPI_ErrorPush(&scpi_context, SCPI_ERROR_SYNTAX);
+        return;
+    }
     (void)SCPI_Input(&scpi_context, line, (int)length);
     (void)SCPI_Input(&scpi_context, "\n", 1);
 }
@@ -336,12 +352,14 @@ void router_scpi_input(const char *line)
 void router_scpi_gom_complete(const gom_operation_t *operation,
                               gom_result_t result, const char *response)
 {
+    char pc_response[GOM_REPLY_LINE_MAX + 3u];
     double value;
+    size_t response_length;
 
     if (operation == NULL) return;
     pending_query = false;
     if (result != GOM_RESULT_OK) {
-        SCPI_ErrorPush(&scpi_context, result == GOM_RESULT_TIMEOUT ?
+        SCPI_ErrorPush(&scpi_context, result == GOM_RESULT_TIMEOUT || result == GOM_RESULT_CANCELLED ?
                        SCPI_ERROR_QUERY_INTERRUPTED : SCPI_ERROR_COMMUNICATION_ERROR);
         return;
     }
@@ -350,15 +368,27 @@ void router_scpi_gom_complete(const gom_operation_t *operation,
         SCPI_ErrorPush(&scpi_context, SCPI_ERROR_EXECUTION_ERROR);
         return;
     }
-    if (operation->id == GOM_OP_READ || operation->id == GOM_OP_RANGE || operation->id == GOM_OP_RELATIVE_DATA) {
+    if (operation->response_type == GOM_RESPONSE_NUMBER) {
         if (!parse_response_number(response, &value) || value >= 9.0e9) {
             SCPI_ErrorPush(&scpi_context, SCPI_ERROR_EXECUTION_ERROR);
             return;
         }
-        SCPI_ResultDouble(&scpi_context, value);
-        (void)gom_firmware_pc_write("\r\n", 2u);
+        response_length = SCPI_DoubleToStr(value, pc_response, sizeof(pc_response) - 2u);
     } else {
-        SCPI_ResultCharacters(&scpi_context, response, strlen(response));
-        (void)gom_firmware_pc_write("\r\n", 2u);
+        response_length = strlen(response);
+        if (response_length > GOM_REPLY_LINE_MAX) {
+            SCPI_ErrorPush(&scpi_context, SCPI_ERROR_EXECUTION_ERROR);
+            return;
+        }
+        memcpy(pc_response, response, response_length);
+    }
+    if (response_length == 0u || response_length > GOM_REPLY_LINE_MAX) {
+        SCPI_ErrorPush(&scpi_context, SCPI_ERROR_EXECUTION_ERROR);
+        return;
+    }
+    pc_response[response_length++] = '\r';
+    pc_response[response_length++] = '\n';
+    if (!gom_firmware_pc_write(pc_response, response_length)) {
+        SCPI_ErrorPush(&scpi_context, SCPI_ERROR_COMMUNICATION_ERROR);
     }
 }

@@ -19,9 +19,17 @@ typedef enum {
     GOM_OP_TRIGGER
 } gom_operation_id_t;
 
+/** Expected payload returned by a whitelisted GOM command. */
+typedef enum {
+    GOM_RESPONSE_NONE,
+    GOM_RESPONSE_TEXT,
+    GOM_RESPONSE_NUMBER
+} gom_response_type_t;
+
 typedef struct {
     gom_operation_id_t id;
     bool query;
+    gom_response_type_t response_type;
     bool boolean;
     double number;
     char token[12];
@@ -32,7 +40,8 @@ typedef enum {
     GOM_RESULT_TIMEOUT,
     GOM_RESULT_UART_ERROR,
     GOM_RESULT_BAD_RESPONSE,
-    GOM_RESULT_UNAVAILABLE
+    GOM_RESULT_UNAVAILABLE,
+    GOM_RESULT_CANCELLED
 } gom_result_t;
 
 typedef void (*gom_completion_callback_t)(const gom_operation_t *operation,
@@ -47,7 +56,10 @@ void gom_firmware_step(void);
 bool gom_firmware_submit(const gom_operation_t *operation);
 /** Request safe break-before-make selection of GOM channel 1..8. */
 bool gom_firmware_select_channel(uint8_t channel);
-/** Immediately release all GOM relays and discard the selected channel. */
+/**
+ * Cancel an active transaction, release all GOM relays, and discard the
+ * selected channel. A pending query completes with GOM_RESULT_CANCELLED.
+ */
 void gom_firmware_open_all(void);
 /** Return the selected GOM channel, or zero when all relays are open. */
 uint8_t gom_firmware_selected_channel(void);

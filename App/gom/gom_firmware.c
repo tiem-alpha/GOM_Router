@@ -15,6 +15,10 @@
 #define GOM_RECOVERY_DELAY_MS 250u
 #define GOM_LINE_BUDGET 96u
 
+_Static_assert(GOM_UART_RING_SIZE > 1u &&
+               (GOM_UART_RING_SIZE & (GOM_UART_RING_SIZE - 1u)) == 0u,
+               "GOM UART ring size must be a power of two");
+
 typedef struct {
     uint8_t data[GOM_UART_RING_SIZE];
     volatile uint16_t head;
@@ -25,7 +29,7 @@ typedef struct {
 typedef enum {
     FSM_BOOT_ROUTE, FSM_BOOT_IDN_TX, FSM_BOOT_IDN_RX, FSM_BOOT_CFG_TX,
     FSM_BOOT_CFG_RX, FSM_READY, FSM_ROUTE, FSM_TX, FSM_RX, FSM_VERIFY_TX,
-    FSM_VERIFY_RX, FSM_SELECT, FSM_SAFE_WAIT
+    FSM_VERIFY_RX, FSM_SELECT, FSM_OPEN_WAIT, FSM_SAFE_WAIT
 } gom_fsm_t;
 
 typedef struct {
@@ -50,6 +54,7 @@ static uint8_t gom_rx_byte;
 static uint8_t boot_channel;
 static uint8_t boot_query;
 static uint16_t pc_tx_count;
+static uint16_t pc_line_used;
 static uint16_t gom_line_used;
 static char gom_line[GOM_REPLY_LINE_MAX + 1u];
 static char gom_tx[GOM_WIRE_COMMAND_MAX];
@@ -61,30 +66,81 @@ static volatile bool uart_fault;
 static bool boot_config_ok;
 static uint8_t selected_channel;
 
+static uint32_t ring_lock(void)
+{
+    uint32_t primask = __get_PRIMASK();
+
+    __disable_irq();
+    __DMB();
+    return primask;
+}
+
+static void ring_unlock(uint32_t primask)
+{
+    __DMB();
+    __set_PRIMASK(primask);
+}
+
 static bool ring_push(byte_ring_t *ring, uint8_t value)
 {
+    uint32_t primask = ring_lock();
     uint16_t next = (uint16_t)((ring->head + 1u) & (GOM_UART_RING_SIZE - 1u));
     if (next == ring->tail) {
         ring->overflow = true;
+        ring_unlock(primask);
         return false;
     }
     ring->data[ring->head] = value;
     ring->head = next;
+    ring_unlock(primask);
     return true;
 }
 
 static bool ring_pop(byte_ring_t *ring, uint8_t *value)
 {
-    if (ring->tail == ring->head) return false;
+    uint32_t primask = ring_lock();
+
+    if (ring->tail == ring->head) {
+        ring_unlock(primask);
+        return false;
+    }
     *value = ring->data[ring->tail];
     ring->tail = (uint16_t)((ring->tail + 1u) & (GOM_UART_RING_SIZE - 1u));
+    ring_unlock(primask);
     return true;
 }
 
 static void ring_clear(byte_ring_t *ring)
 {
+    uint32_t primask = ring_lock();
+
     ring->tail = ring->head;
     ring->overflow = false;
+    ring_unlock(primask);
+}
+
+static bool ring_write(byte_ring_t *ring, const char *data, size_t length)
+{
+    uint16_t free_space;
+    uint16_t head;
+    size_t index;
+    uint32_t primask;
+
+    if (length > GOM_UART_RING_SIZE - 1u) return false;
+    primask = ring_lock();
+    head = ring->head;
+    free_space = (uint16_t)((ring->tail - head - 1u) & (GOM_UART_RING_SIZE - 1u));
+    if (length > free_space) {
+        ring_unlock(primask);
+        return false;
+    }
+    for (index = 0u; index < length; ++index) {
+        ring->data[head] = (uint8_t)data[index];
+        head = (uint16_t)((head + 1u) & (GOM_UART_RING_SIZE - 1u));
+    }
+    ring->head = head;
+    ring_unlock(primask);
+    return true;
 }
 
 static bool elapsed(uint32_t now, uint32_t deadline)
@@ -131,13 +187,8 @@ static void start_pc_tx(void)
 
 bool gom_firmware_pc_write(const char *data, size_t length)
 {
-    size_t index;
-
     if (data == NULL) return false;
-    for (index = 0u; index < length; ++index) {
-        if (!ring_push(&pc_tx, (uint8_t)data[index])) return false;
-    }
-    return true;
+    return ring_write(&pc_tx, data, length);
 }
 
 static bool gom_send(const char *text)
@@ -158,6 +209,7 @@ static void safe_open(void)
     relay_matrix_emergency_off(&relays);
     selected_channel = 0u;
     ring_clear(&gom_rx);
+    gom_line_used = 0u;
 }
 
 static void complete(gom_result_t result, const char *response)
@@ -216,6 +268,7 @@ static bool encode_operation(const gom_operation_t *operation, char *output, siz
         if (!append_text(output, output_size, &used, " ") ||
             !append_text(output, output_size, &used, number)) return false;
     } else if (!operation->query && (operation->id == GOM_OP_FUNCTION || operation->id == GOM_OP_SPEED)) {
+        if (memchr(operation->token, '\0', sizeof(operation->token)) == NULL) return false;
         if (!append_text(output, output_size, &used, " ") ||
             !append_text(output, output_size, &used, operation->token)) return false;
     }
@@ -246,6 +299,7 @@ void gom_firmware_init(gom_completion_callback_t complete_callback)
 {
     const relay_matrix_io_t io = {
         .request_image = board_route_request_image,
+        .emergency_disable = board_route_emergency_disable,
         .busy = board_route_busy,
         .failed = board_route_failed,
         .context = NULL,
@@ -259,10 +313,12 @@ void gom_firmware_init(gom_completion_callback_t complete_callback)
     relay_matrix_init(&relays, &io);
     completion = complete_callback;
     boot_channel = 1u;
+    pc_line_used = 0u;
+    gom_line_used = 0u;
     boot_config_ok = true;
     state = relays.interlock_fault ? FSM_SAFE_WAIT : FSM_BOOT_ROUTE;
-    (void)HAL_UART_Receive_IT(BOARD_UART_PC, &pc_rx_byte, 1u);
-    (void)HAL_UART_Receive_IT(BOARD_UART_GOM, &gom_rx_byte, 1u);
+    if (HAL_UART_Receive_IT(BOARD_UART_PC, &pc_rx_byte, 1u) != HAL_OK) uart_fault = true;
+    if (HAL_UART_Receive_IT(BOARD_UART_GOM, &gom_rx_byte, 1u) != HAL_OK) uart_fault = true;
 }
 
 bool gom_firmware_ready(void)
@@ -281,8 +337,14 @@ bool gom_firmware_select_channel(uint8_t channel)
 
 void gom_firmware_open_all(void)
 {
+    bool transaction_active = state == FSM_ROUTE || state == FSM_TX || state == FSM_RX ||
+                              state == FSM_VERIFY_TX || state == FSM_VERIFY_RX;
+
+    if (transaction_active) complete(GOM_RESULT_CANCELLED, NULL);
+    (void)HAL_UART_Abort_IT(BOARD_UART_GOM);
+    gom_tx_busy = false;
     safe_open();
-    if (state == FSM_READY || state == FSM_SELECT) state = FSM_READY;
+    state = FSM_OPEN_WAIT;
 }
 
 uint8_t gom_firmware_selected_channel(void)
@@ -314,7 +376,6 @@ bool gom_firmware_submit(const gom_operation_t *operation)
 
 bool gom_firmware_take_pc_line(char *line, size_t line_size)
 {
-    static uint16_t pc_line_used;
     return line != NULL && line_size > 1u && take_line(&pc_rx, line, &pc_line_used, line_size);
 }
 
@@ -327,9 +388,19 @@ void gom_firmware_step(void)
     relay_matrix_step(&relays, now);
     start_pc_tx();
     if (uart_fault || pc_rx.overflow || gom_rx.overflow || relays.interlock_fault) {
+        if (uart_fault) {
+            (void)HAL_UART_Abort_IT(BOARD_UART_PC);
+            (void)HAL_UART_Abort_IT(BOARD_UART_GOM);
+            pc_tx_busy = false;
+            gom_tx_busy = false;
+            pc_tx_count = 0u;
+            ring_clear(&pc_tx);
+        }
         uart_fault = false;
         ring_clear(&pc_rx);
         ring_clear(&gom_rx);
+        pc_line_used = 0u;
+        gom_line_used = 0u;
         if (state != FSM_SAFE_WAIT) begin_safe_recovery(now, GOM_RESULT_UART_ERROR);
         return;
     }
@@ -382,6 +453,9 @@ void gom_firmware_step(void)
     case FSM_READY:
         break;
     case FSM_SELECT:
+        if (relay_matrix_ready(&relays)) state = FSM_READY;
+        break;
+    case FSM_OPEN_WAIT:
         if (relay_matrix_ready(&relays)) state = FSM_READY;
         break;
     case FSM_ROUTE:
@@ -438,10 +512,10 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart == BOARD_UART_PC) {
         (void)ring_push(&pc_rx, pc_rx_byte);
-        (void)HAL_UART_Receive_IT(huart, &pc_rx_byte, 1u);
+        if (HAL_UART_Receive_IT(huart, &pc_rx_byte, 1u) != HAL_OK) uart_fault = true;
     } else if (huart == BOARD_UART_GOM) {
         (void)ring_push(&gom_rx, gom_rx_byte);
-        (void)HAL_UART_Receive_IT(huart, &gom_rx_byte, 1u);
+        if (HAL_UART_Receive_IT(huart, &gom_rx_byte, 1u) != HAL_OK) uart_fault = true;
     }
 }
 
@@ -458,6 +532,23 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
     uart_fault = true;
-    if (huart == BOARD_UART_PC) (void)HAL_UART_Receive_IT(huart, &pc_rx_byte, 1u);
-    if (huart == BOARD_UART_GOM) (void)HAL_UART_Receive_IT(huart, &gom_rx_byte, 1u);
+    if (huart == BOARD_UART_PC) {
+        pc_tx_busy = false;
+        if (HAL_UART_Receive_IT(huart, &pc_rx_byte, 1u) != HAL_OK) uart_fault = true;
+    }
+    if (huart == BOARD_UART_GOM) {
+        gom_tx_busy = false;
+        if (HAL_UART_Receive_IT(huart, &gom_rx_byte, 1u) != HAL_OK) uart_fault = true;
+    }
+}
+
+void HAL_UART_AbortCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart == BOARD_UART_PC) {
+        pc_tx_busy = false;
+        if (HAL_UART_Receive_IT(huart, &pc_rx_byte, 1u) != HAL_OK) uart_fault = true;
+    } else if (huart == BOARD_UART_GOM) {
+        gom_tx_busy = false;
+        if (HAL_UART_Receive_IT(huart, &gom_rx_byte, 1u) != HAL_OK) uart_fault = true;
+    }
 }

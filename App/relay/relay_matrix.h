@@ -7,6 +7,7 @@
  * bit 2*(channel-1)+1 select one of eight break-before-make routes. */
 typedef struct {
     bool (*request_image)(void *context, uint16_t image);
+    void (*emergency_disable)(void *context);
     bool (*busy)(void *context);
     bool (*failed)(void *context);
     void *context;
